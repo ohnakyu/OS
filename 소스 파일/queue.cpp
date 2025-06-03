@@ -5,7 +5,6 @@
 
 #define MAX_CAPACITY 100000
 
-// 내부 구현 구조체 (Queue*가 가리킬 실제 구조)
 struct QueueImpl {
     Item* heap;
     int capacity;
@@ -14,19 +13,14 @@ struct QueueImpl {
     std::mutex dequeue_mtx;
 };
 
-// Queue* → QueueImpl* 캐스팅 헬퍼
 static QueueImpl* to_impl(Queue* q) {
     return reinterpret_cast<QueueImpl*>(q);
 }
 
-// 힙 인덱스 계산
 static int parent(int i) { return (i - 1) / 2; }
 static int left(int i) { return 2 * i + 1; }
 static int right(int i) { return 2 * i + 2; }
 
-// 아이템 스왑 함수는 더 이상 사용하지 않음
-
-// 위쪽으로 힙 정렬 (임시 변수로 최소 복사)
 static void heapify_up(QueueImpl* pq, int idx) {
     Item tmp = pq->heap[idx];
     while (idx > 0) {
@@ -38,7 +32,6 @@ static void heapify_up(QueueImpl* pq, int idx) {
     pq->heap[idx] = tmp;
 }
 
-// 아래쪽으로 힙 정렬 (임시 변수로 최소 복사)
 static void heapify_down(QueueImpl* pq, int idx) {
     Item tmp = pq->heap[idx];
     int sz = pq->size.load();
@@ -72,19 +65,9 @@ void release(Queue* queue) {
     delete pq;
 }
 
-Node* nalloc(Item item) {
-    // 배열 기반이라 사용 안함
-    return nullptr;
-}
-
-void nfree(Node* node) {
-    // 배열 기반이라 사용 안함
-}
-
-Node* nclone(Node* node) {
-    // 배열 기반이라 사용 안함
-    return nullptr;
-}
+Node* nalloc(Item item) { return nullptr; }
+void nfree(Node* node) {}
+Node* nclone(Node* node) { return nullptr; }
 
 Reply enqueue(Queue* queue, Item item) {
     Reply reply = { false, {0, nullptr} };
@@ -93,7 +76,19 @@ Reply enqueue(Queue* queue, Item item) {
 
     std::lock_guard<std::mutex> lock(pq->enqueue_mtx);
     int sz = pq->size.load();
-    if (sz >= pq->capacity) return reply; // 가득 찼음
+
+    // 1) key 중복 검사 및 값 교체
+    for (int i = 0; i < sz; i++) {
+        if (pq->heap[i].key == item.key) {
+            pq->heap[i].value = item.value;  // 포인터 교체 (메모리 관리 호출자 책임)
+            reply.success = true;
+            reply.item = item;
+            return reply;
+        }
+    }
+
+    // 2) 중복 없으면 새 노드 추가
+    if (sz >= pq->capacity) return reply;
 
     pq->heap[sz] = item;
     pq->size.fetch_add(1);
@@ -111,7 +106,7 @@ Reply dequeue(Queue* queue) {
 
     std::lock_guard<std::mutex> lock(pq->dequeue_mtx);
     int sz = pq->size.load();
-    if (sz <= 0) return reply; // 빈 큐
+    if (sz <= 0) return reply;
 
     Item ret = pq->heap[0];
     pq->size.fetch_sub(1);

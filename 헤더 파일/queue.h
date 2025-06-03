@@ -18,7 +18,7 @@ void release(Queue* queue);
 Node* nalloc(Item item);
 void nfree(Node* node);
 Node* nclone(Node* node);
- 
+
 // (key, item)을 키값에 따라 적절한 위치에 추가
 // Reply: 문제가 없으면 success=true, 아니면 success=false
 Reply enqueue(Queue* queue, Item item);

@@ -1,6 +1,8 @@
 #include <iostream>
 #include <mutex>
 #include <atomic>
+#include <cstring>
+#include <cstdlib>
 #include "queue.h"
 
 #define MAX_CAPACITY 100000
@@ -50,6 +52,13 @@ static void heapify_down(QueueImpl* pq, int idx) {
     pq->heap[idx] = tmp;
 }
 
+static void* deep_copy(void* src) {
+    if (!src) return nullptr;
+    void* dst = malloc(sizeof(int));  // 항상 int 크기로 복사
+    if (dst) memcpy(dst, src, sizeof(int));
+    return dst;
+}
+
 Queue* init(void) {
     QueueImpl* pq = new QueueImpl;
     pq->capacity = MAX_CAPACITY;
@@ -61,6 +70,10 @@ Queue* init(void) {
 void release(Queue* queue) {
     if (!queue) return;
     QueueImpl* pq = to_impl(queue);
+    int sz = pq->size.load();
+    for (int i = 0; i < sz; ++i) {
+        free(pq->heap[i].value);
+    }
     delete[] pq->heap;
     delete pq;
 }
@@ -77,25 +90,29 @@ Reply enqueue(Queue* queue, Item item) {
     std::lock_guard<std::mutex> lock(pq->enqueue_mtx);
     int sz = pq->size.load();
 
-    // 1) key 중복 검사 및 값 교체
     for (int i = 0; i < sz; i++) {
         if (pq->heap[i].key == item.key) {
-            pq->heap[i].value = item.value;  // 포인터 교체 (메모리 관리 호출자 책임)
+            free(pq->heap[i].value);
+            pq->heap[i].value = deep_copy(item.value);
             reply.success = true;
-            reply.item = item;
+            reply.item.key = item.key;
+            reply.item.value = pq->heap[i].value;
             return reply;
         }
     }
 
-    // 2) 중복 없으면 새 노드 추가
     if (sz >= pq->capacity) return reply;
 
-    pq->heap[sz] = item;
+    Item copied;
+    copied.key = item.key;
+    copied.value = deep_copy(item.value);
+
+    pq->heap[sz] = copied;
     pq->size.fetch_add(1);
     heapify_up(pq, sz);
 
     reply.success = true;
-    reply.item = item;
+    reply.item = copied;
     return reply;
 }
 
@@ -110,8 +127,10 @@ Reply dequeue(Queue* queue) {
 
     Item ret = pq->heap[0];
     pq->size.fetch_sub(1);
-    if (pq->size.load() > 0) {
-        pq->heap[0] = pq->heap[pq->size.load()];
+    int new_size = pq->size.load();
+
+    if (new_size > 0) {
+        pq->heap[0] = pq->heap[new_size];
         heapify_down(pq, 0);
     }
 

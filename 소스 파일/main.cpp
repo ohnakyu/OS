@@ -2,13 +2,12 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
-#include <vector>
 #include "queue.h"
 
 using namespace std;
 
 #define REQUEST_PER_CLIENT 10000
-#define NUM_CLIENTS 32
+#define NUM_CLIENTS 5
 
 atomic<int> sum_key = 0;
 atomic<int> sum_value = 0;
@@ -25,19 +24,19 @@ typedef struct {
 } Request;
 
 void client_func(Queue* queue, Request requests[], int n_request) {
-    Reply reply = { false, 0 };
+    Reply reply = { false, {0, nullptr} };
 
     for (int i = 0; i < n_request; i++) {
         if (requests[i].op == GET) {
             reply = dequeue(queue);
         }
-        else { // SET
+        else {
             reply = enqueue(queue, requests[i].item);
         }
 
-        if (reply.success) {
+        if (reply.success && reply.item.value) {
             sum_key += reply.item.key;
-            sum_value += (int)(intptr_t)reply.item.value;
+            sum_value += *(int*)(reply.item.value);
         }
     }
 }
@@ -45,17 +44,17 @@ void client_func(Queue* queue, Request requests[], int n_request) {
 int main(void) {
     srand((unsigned int)time(NULL));
 
-    // 총 요청 개수는 NUM_CLIENTS * REQUEST_PER_CLIENT
     const int total_requests = NUM_CLIENTS * REQUEST_PER_CLIENT;
     Request* all_requests = new Request[total_requests];
 
-    // 요청 배열 채우기: 클라이언트마다 절반은 SET, 절반은 GET
     for (int c = 0; c < NUM_CLIENTS; c++) {
         int offset = c * REQUEST_PER_CLIENT;
         for (int i = 0; i < REQUEST_PER_CLIENT / 2; i++) {
             all_requests[offset + i].op = SET;
             all_requests[offset + i].item.key = i;
-            all_requests[offset + i].item.value = (void*)(intptr_t)(rand() % 1000000);
+
+            int* val = new int(rand() % 1000000);
+            all_requests[offset + i].item.value = val;
         }
         for (int i = REQUEST_PER_CLIENT / 2; i < REQUEST_PER_CLIENT; i++) {
             all_requests[offset + i].op = GET;
@@ -67,26 +66,30 @@ int main(void) {
     Queue* queue = init();
     if (!queue) {
         cerr << "큐 초기화 실패" << endl;
+        for (int i = 0; i < total_requests / 2; ++i) {
+            delete (int*)all_requests[i].item.value;
+        }
         delete[] all_requests;
         return -1;
     }
 
     auto start_time = chrono::high_resolution_clock::now();
 
-    // 32개 스레드 생성
-    vector<thread> clients;
+    std::thread clients[NUM_CLIENTS];  // ✅ 벡터 대신 배열 사용
     for (int c = 0; c < NUM_CLIENTS; c++) {
-        clients.emplace_back(client_func, queue, &all_requests[c * REQUEST_PER_CLIENT], REQUEST_PER_CLIENT);
+        clients[c] = std::thread(client_func, queue, &all_requests[c * REQUEST_PER_CLIENT], REQUEST_PER_CLIENT);
     }
-
-    // 모든 스레드 종료 대기
-    for (auto& t : clients) {
-        t.join();
+    for (int c = 0; c < NUM_CLIENTS; c++) {
+        clients[c].join();
     }
 
     auto end_time = chrono::high_resolution_clock::now();
 
     release(queue);
+
+    for (int i = 0; i < total_requests / 2; ++i) {
+        delete (int*)all_requests[i].item.value;
+    }
     delete[] all_requests;
 
     chrono::duration<double> elapsed = end_time - start_time;

@@ -24,7 +24,7 @@ typedef struct {
 } Request;
 
 void client_func(Queue* queue, Request requests[], int n_request) {
-    Reply reply = { false, {0, nullptr} };
+    Reply reply = { false, {0, nullptr, 0} };
 
     for (int i = 0; i < n_request; i++) {
         if (requests[i].op == GET) {
@@ -55,11 +55,13 @@ int main(void) {
 
             int* val = new int(rand() % 1000000);
             all_requests[offset + i].item.value = val;
+            all_requests[offset + i].item.value_size = sizeof(int);
         }
         for (int i = REQUEST_PER_CLIENT / 2; i < REQUEST_PER_CLIENT; i++) {
             all_requests[offset + i].op = GET;
             all_requests[offset + i].item.key = 0;
             all_requests[offset + i].item.value = nullptr;
+            all_requests[offset + i].item.value_size = 0;
         }
     }
 
@@ -75,7 +77,7 @@ int main(void) {
 
     auto start_time = chrono::high_resolution_clock::now();
 
-    std::thread clients[NUM_CLIENTS];  // ✅ 벡터 대신 배열 사용
+    std::thread clients[NUM_CLIENTS];
     for (int c = 0; c < NUM_CLIENTS; c++) {
         clients[c] = std::thread(client_func, queue, &all_requests[c * REQUEST_PER_CLIENT], REQUEST_PER_CLIENT);
     }

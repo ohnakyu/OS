@@ -52,10 +52,11 @@ static void heapify_down(QueueImpl* pq, int idx) {
     pq->heap[idx] = tmp;
 }
 
-static void* deep_copy(void* src) {
-    if (!src) return nullptr;
-    void* dst = malloc(sizeof(int));  // 항상 int 크기로 복사
-    if (dst) memcpy(dst, src, sizeof(int));
+// value를 value_size만큼 깊은 복사
+static void* deep_copy(Value src, int size) {
+    if (!src || size <= 0) return nullptr;
+    void* dst = malloc(size);
+    if (dst) memcpy(dst, src, size);
     return dst;
 }
 
@@ -78,25 +79,28 @@ void release(Queue* queue) {
     delete pq;
 }
 
+// 사용 안함
 Node* nalloc(Item item) { return nullptr; }
 void nfree(Node* node) {}
 Node* nclone(Node* node) { return nullptr; }
 
 Reply enqueue(Queue* queue, Item item) {
-    Reply reply = { false, {0, nullptr} };
+    Reply reply = { false, {0, nullptr, 0} };
     if (!queue) return reply;
     QueueImpl* pq = to_impl(queue);
 
     std::lock_guard<std::mutex> lock(pq->enqueue_mtx);
     int sz = pq->size.load();
 
-    for (int i = 0; i < sz; i++) {
+    // key 중복 확인 및 value 덮어쓰기
+    for (int i = 0; i < sz; ++i) {
         if (pq->heap[i].key == item.key) {
-            free(pq->heap[i].value);
-            pq->heap[i].value = deep_copy(item.value);
+            free(pq->heap[i].value);  // 기존 value 해제
+            pq->heap[i].value = deep_copy(item.value, item.value_size);
+            pq->heap[i].value_size = item.value_size;
+
             reply.success = true;
-            reply.item.key = item.key;
-            reply.item.value = pq->heap[i].value;
+            reply.item = pq->heap[i];
             return reply;
         }
     }
@@ -105,7 +109,8 @@ Reply enqueue(Queue* queue, Item item) {
 
     Item copied;
     copied.key = item.key;
-    copied.value = deep_copy(item.value);
+    copied.value = deep_copy(item.value, item.value_size);
+    copied.value_size = item.value_size;
 
     pq->heap[sz] = copied;
     pq->size.fetch_add(1);
@@ -117,7 +122,7 @@ Reply enqueue(Queue* queue, Item item) {
 }
 
 Reply dequeue(Queue* queue) {
-    Reply reply = { false, {0, nullptr} };
+    Reply reply = { false, {0, nullptr, 0} };
     if (!queue) return reply;
     QueueImpl* pq = to_impl(queue);
 
@@ -140,5 +145,5 @@ Reply dequeue(Queue* queue) {
 }
 
 Queue* range(Queue* queue, Key start, Key end) {
-    return nullptr; // 미구현
+    return nullptr;  // 미구현
 }

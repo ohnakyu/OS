@@ -79,7 +79,6 @@ void release(Queue* queue) {
     delete pq;
 }
 
-// 사용 안함
 Node* nalloc(Item item) { return nullptr; }
 void nfree(Node* node) {}
 Node* nclone(Node* node) { return nullptr; }
@@ -145,5 +144,33 @@ Reply dequeue(Queue* queue) {
 }
 
 Queue* range(Queue* queue, Key start, Key end) {
-    return nullptr;  // 미구현
+    if (!queue) return nullptr;
+    QueueImpl* src = to_impl(queue);
+
+    // 새 Queue 초기화
+    QueueImpl* dst = new QueueImpl;
+    dst->capacity = MAX_CAPACITY;
+    dst->size = 0;
+    dst->heap = new Item[dst->capacity];
+
+    // 원본 큐에 대한 동기화
+    std::lock_guard<std::mutex> lock_enq(src->enqueue_mtx);
+    std::lock_guard<std::mutex> lock_deq(src->dequeue_mtx);
+
+    int sz = src->size.load();
+    for (int i = 0; i < sz; ++i) {
+        Key k = src->heap[i].key;
+        if (k >= start && k <= end) {
+            Item copied;
+            copied.key = src->heap[i].key;
+            copied.value_size = src->heap[i].value_size;
+            copied.value = deep_copy(src->heap[i].value, copied.value_size);
+
+            dst->heap[dst->size] = copied;
+            heapify_up(dst, dst->size);
+            dst->size.fetch_add(1);
+        }
+    }
+
+    return reinterpret_cast<Queue*>(dst);
 }

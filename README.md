@@ -23,3 +23,5 @@ Reply reply = { false, {0, nullptr, 0} }; → 구조체 확장에 맞게 수정
 3. qtype.h
 key, value + value_size 추가
    
+# 06-10
+1. queue.cpp에 range() 함수 추가
